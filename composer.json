@@ -1,0 +1,67 @@
+{
+    "name": "wendelladriel/laravel-idempotency",
+    "description": "Idempotency support for Laravel applications",
+    "type": "library",
+    "keywords": [
+        "laravel",
+        "idempotency",
+        "http",
+        "api"
+    ],
+    "license": "MIT",
+    "autoload": {
+        "psr-4": {
+            "WendellAdriel\\Idempotency\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "WendellAdriel\\Idempotency\\Tests\\": "tests/"
+        }
+    },
+    "support": {
+        "issues": "https://github.com/WendellAdriel/laravel-idempotency/issues",
+        "source": "https://github.com/WendellAdriel/laravel-idempotency"
+    },
+    "authors": [
+        {
+            "name": "Wendell Adriel",
+            "email": "wendelladriel.ti@gmail.com"
+        }
+    ],
+    "require": {
+        "php": "^8.2",
+        "illuminate/support": "^12.0|^13.0"
+    },
+    "require-dev": {
+        "laravel/pint": "^1.27",
+        "orchestra/testbench": "^10.0|^11.0",
+        "pestphp/pest": "^3.0|^4.0",
+        "phpstan/phpstan": "^2.1"
+    },
+    "scripts": {
+        "lint": "pint --parallel",
+        "stan": "phpstan analyse",
+        "test:lint": "pint --parallel --test",
+        "test:unit": "./vendor/bin/pest --order-by random",
+        "test": [
+            "@test:lint",
+            "@stan",
+            "@test:unit"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "WendellAdriel\\Idempotency\\Providers\\IdempotencyServiceProvider"
+            ]
+        }
+    },
+    "config": {
+        "allow-plugins": {
+            "pestphp/pest-plugin": true
+        }
+    },
+    "minimum-stability": "dev",
+    "prefer-stable": true
+}
