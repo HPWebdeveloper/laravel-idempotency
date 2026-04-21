@@ -15,7 +15,7 @@ final class IdempotencyServiceProvider extends ServiceProvider
             [
                 __DIR__ . '/../../config/idempotency.php' => base_path('config/idempotency.php'),
             ],
-            'config'
+            ['idempotency', 'idempotency-config']
         );
     }
 

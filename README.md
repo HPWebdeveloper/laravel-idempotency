@@ -22,7 +22,7 @@ composer require wendelladriel/laravel-idempotency
 Publish the config file:
 
 ```bash
-php artisan vendor:publish --provider="WendellAdriel\Idempotency\Providers\IdempotencyServiceProvider" --tag=config
+php artisan vendor:publish --tag=idempotency
 ```
 
 The config file will be added to `config/idempotency.php`.
