@@ -11,12 +11,11 @@ jobs:
         strategy:
             matrix:
                 os: [ubuntu-latest]
-                php: [8.2, 8.3, 8.4, 8.5]
+                php: [8.3, 8.4, 8.5]
                 laravel: [12.*, 13.*]
                 dependency-version: [prefer-stable]
                 exclude:
                   - laravel: 13.*
-                    php: 8.2
                 include:
                   - laravel: 12.*
                     testbench: 10.*
@@ -27,10 +26,10 @@ jobs:
 
         steps:
             - name: Checkout code
-              uses: actions/checkout@v4
+              uses: actions/checkout@v6
 
             - name: Setup PHP
-              uses: shivammathur/setup-php@v2
+              uses: shivammathur/setup-php@2
               with:
                   php-version: ${{ matrix.php }}
                   coverage: none
@@ -40,11 +39,5 @@ jobs:
                 composer require "laravel/framework:${{ matrix.laravel }}" "orchestra/testbench:${{ matrix.testbench }}" "nesbot/carbon:>=2.62.1" --no-interaction --no-update
                 composer update --${{ matrix.dependency-version }} --prefer-dist --no-interaction
 
-            - name: Code Style 👨‍🏭
-              run: composer test:lint
-
-            - name: Static Analysis 🔍
-              run: composer stan
-
-            - name: Pest Tests 🧫
-              run: composer test:unit
+            - name: Code Quality and Tests
+              run: composer test
