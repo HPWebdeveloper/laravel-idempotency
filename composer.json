@@ -1,6 +1,6 @@
 {
     "name": "wendelladriel/laravel-idempotency",
-    "description": "Idempotency support for Laravel applications",
+    "description": "HTTP Idempotency Middleware for Laravel applications",
     "type": "library",
     "keywords": [
         "laravel",
@@ -30,23 +30,35 @@
         }
     ],
     "require": {
-        "php": "^8.2",
+        "php": "^8.3",
         "illuminate/support": "^12.0|^13.0"
     },
     "require-dev": {
-        "laravel/pint": "^1.27",
+        "laravel/pint": "^1.29",
         "orchestra/testbench": "^10.0|^11.0",
         "pestphp/pest": "^3.0|^4.0",
-        "phpstan/phpstan": "^2.1"
+        "pestphp/pest-plugin-type-coverage": "^3.0|^4.0",
+        "phpstan/phpstan": "^2.1",
+        "rector/rector": "^2.4"
     },
     "scripts": {
-        "lint": "pint --parallel",
+        "lint": [
+            "pint --parallel",
+            "rector"
+        ],
         "stan": "phpstan analyse",
-        "test:lint": "pint --parallel --test",
+        "test:lint": [
+            "pint --parallel --test",
+            "rector --dry-run"
+        ],
+        "test:types": [
+            "pest --type-coverage --min=100"
+        ],
         "test:unit": "./vendor/bin/pest --order-by random",
         "test": [
             "@test:lint",
             "@stan",
+            "@test:types",
             "@test:unit"
         ]
     },
@@ -62,6 +74,6 @@
             "pestphp/pest-plugin": true
         }
     },
-    "minimum-stability": "dev",
+    "minimum-stability": "stable",
     "prefer-stable": true
 }

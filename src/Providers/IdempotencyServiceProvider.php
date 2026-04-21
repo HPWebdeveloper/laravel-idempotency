@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WendellAdriel\Idempotency\Providers;
 
 use Illuminate\Support\ServiceProvider;
+use Override;
 
 final class IdempotencyServiceProvider extends ServiceProvider
 {
@@ -18,6 +19,7 @@ final class IdempotencyServiceProvider extends ServiceProvider
         );
     }
 
+    #[Override]
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__ . '/../../config/idempotency.php', 'idempotency');
