@@ -2,7 +2,7 @@
     <img src="https://github.com/WendellAdriel/laravel-idempotency/raw/main/art/logo.png" alt="Laravel Idempotency" height="300"/>
     <p>
         <h1>Laravel Idempotency</h1>
-        HTTP idempotency middleware and controller attributes for Laravel applications
+        HTTP idempotency middleware for Laravel applications
     </p>
 </div>
 
