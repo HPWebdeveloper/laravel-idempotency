@@ -18,6 +18,7 @@ final class Idempotent extends Middleware
      */
     public function __construct(
         ?int $ttl = null,
+        ?int $lockTimeout = null,
         ?bool $required = null,
         ?IdempotencyScope $scope = null,
         ?string $header = null,
@@ -27,6 +28,7 @@ final class Idempotent extends Middleware
         parent::__construct(
             IdempotentMiddleware::using(
                 ttl: $ttl,
+                lockTimeout: $lockTimeout,
                 required: $required,
                 scope: $scope,
                 header: $header,

@@ -10,6 +10,7 @@ final readonly class IdempotencyOptions
 {
     public function __construct(
         public int $ttl,
+        public int $lockTimeout,
         public bool $required,
         public IdempotencyScope $scope,
         public string $header,
@@ -17,12 +18,14 @@ final readonly class IdempotencyOptions
 
     public static function resolve(
         null|int|string $ttl = null,
+        null|int|string $lockTimeout = null,
         null|bool|string $required = null,
         null|string|IdempotencyScope $scope = null,
         ?string $header = null,
     ): self {
         return new self(
             ttl: self::resolveTtl($ttl),
+            lockTimeout: self::resolveLockTimeout($lockTimeout),
             required: self::resolveRequired($required),
             scope: IdempotencyScope::fromConfig($scope),
             header: $header ?? config()->string('idempotency.header'),
@@ -33,6 +36,7 @@ final readonly class IdempotencyOptions
     {
         return implode(',', [
             $this->ttl,
+            $this->lockTimeout,
             $this->required ? '1' : '0',
             $this->scope->value,
             $this->header,
@@ -48,6 +52,17 @@ final readonly class IdempotencyOptions
         return $ttl !== null
             ? (int) $ttl
             : config()->integer('idempotency.ttl');
+    }
+
+    private static function resolveLockTimeout(null|int|string $lockTimeout): int
+    {
+        if (is_int($lockTimeout)) {
+            return $lockTimeout;
+        }
+
+        return $lockTimeout !== null
+            ? (int) $lockTimeout
+            : config()->integer('idempotency.lock_timeout');
     }
 
     private static function resolveRequired(null|bool|string $required): bool
