@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace WendellAdriel\Idempotency\Support;
 
 use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Response as IlluminateResponse;
 use Symfony\Component\HttpFoundation\Response;
 
 final readonly class StoredResponse
@@ -73,5 +74,16 @@ final readonly class StoredResponse
             'is_redirect' => $this->isRedirect,
             'target_url' => $this->targetUrl,
         ];
+    }
+
+    public function toResponse(): Response
+    {
+        $response = $this->isRedirect
+            ? new RedirectResponse($this->targetUrl ?? '/', $this->status, $this->headers)
+            : new IlluminateResponse($this->content, $this->status, $this->headers);
+
+        $response->headers->set('Idempotency-Replayed', 'true');
+
+        return $response;
     }
 }
