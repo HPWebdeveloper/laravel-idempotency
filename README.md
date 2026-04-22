@@ -27,6 +27,8 @@ Laravel Idempotency helps you safely retry write-oriented HTTP requests without 
 - Replay cached responses for matching `POST`, `PUT`, and `PATCH` requests.
 - Reject payload mismatches with `422 Unprocessable Entity`.
 - Reject in-flight duplicate requests with `409 Conflict` and `Retry-After: 1`.
+- Inspect and prune cached entries with the `idempotency:list` and `idempotency:forget` Artisan commands.
+- Ships a [Laravel Boost](https://github.com/laravel/boost) AI skill so agents integrate the package correctly out of the box.
 
 ## Installation
 
