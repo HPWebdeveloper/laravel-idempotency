@@ -1,0 +1,328 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Artisan;
+use WendellAdriel\Idempotency\Enums\IdempotencyScope;
+use WendellAdriel\Idempotency\Support\IdempotencyIndex;
+use WendellAdriel\Idempotency\Support\IndexMember;
+
+beforeEach(function (): void {
+    $this->cache = $this->app->make(Cache::class);
+    $this->index = new IdempotencyIndex($this->cache);
+});
+
+function makeMember(array $overrides = []): IndexMember
+{
+    $now = Carbon::now()->getTimestamp();
+
+    return IndexMember::fromArray(array_merge([
+        'storageKey' => 'hash-1',
+        'scope' => IdempotencyScope::User->value,
+        'identifier' => '5',
+        'clientKey' => 'client-1',
+        'route' => 'orders.store',
+        'method' => 'POST',
+        'status' => 200,
+        'createdAt' => $now,
+        'expiresAt' => $now + 3600,
+    ], $overrides));
+}
+
+test('remember stores a user member and registers the scope', function (): void {
+    $this->index->remember(makeMember());
+
+    $stored = $this->cache->get('idempotent-index:user:5');
+    expect($stored)->toBeArray()
+        ->and($stored)->toHaveKey('hash-1');
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes)->toBeArray()
+        ->and($scopes)->toContain('user:5');
+});
+
+test('remember stores a global member with empty identifier and registers global scope', function (): void {
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-g',
+        'scope' => IdempotencyScope::Global,
+        'identifier' => '',
+    ]));
+
+    $stored = $this->cache->get('idempotent-index:global');
+    expect($stored)->toBeArray()
+        ->and($stored)->toHaveKey('hash-g');
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes)->toContain('global');
+});
+
+test('remember called twice with the same storage key replaces the previous member', function (): void {
+    $this->index->remember(makeMember(['status' => 200]));
+    $this->index->remember(makeMember(['status' => 201]));
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->status)->toBe(201);
+});
+
+test('remember called with different storage keys under the same scope coexist', function (): void {
+    $this->index->remember(makeMember(['storageKey' => 'hash-a']));
+    $this->index->remember(makeMember(['storageKey' => 'hash-b']));
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    $keys = array_map(fn (IndexMember $m): string => $m->storageKey, $members);
+    sort($keys);
+
+    expect($keys)->toBe(['hash-a', 'hash-b']);
+});
+
+test('forMember returns only active members for the requested scope and identifier', function (): void {
+    Carbon::setTestNow('2026-01-01 00:00:00');
+    $now = Carbon::now()->getTimestamp();
+
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-active',
+        'createdAt' => $now,
+        'expiresAt' => $now + 3600,
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-expired',
+        'createdAt' => $now - 7200,
+        'expiresAt' => $now - 10,
+    ]));
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->storageKey)->toBe('hash-active');
+
+    Carbon::setTestNow();
+});
+
+test('all returns every active member across every scope', function (): void {
+    Carbon::setTestNow('2026-01-01 00:00:00');
+    $now = Carbon::now()->getTimestamp();
+
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-user',
+        'scope' => IdempotencyScope::User,
+        'identifier' => '5',
+        'createdAt' => $now,
+        'expiresAt' => $now + 60,
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-ip',
+        'scope' => IdempotencyScope::Ip,
+        'identifier' => '1.2.3.4',
+        'createdAt' => $now,
+        'expiresAt' => $now + 60,
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-global',
+        'scope' => IdempotencyScope::Global,
+        'identifier' => '',
+        'createdAt' => $now,
+        'expiresAt' => $now + 60,
+    ]));
+
+    $all = $this->index->all();
+
+    $keys = array_map(fn (IndexMember $m): string => $m->storageKey, $all);
+    sort($keys);
+
+    expect($keys)->toBe(['hash-global', 'hash-ip', 'hash-user']);
+
+    Carbon::setTestNow();
+});
+
+test('forget removes all members for a scope and returns their storage keys', function (): void {
+    $this->index->remember(makeMember(['storageKey' => 'hash-a']));
+    $this->index->remember(makeMember(['storageKey' => 'hash-b']));
+
+    $removed = $this->index->forget(IdempotencyScope::User, '5');
+
+    sort($removed);
+    expect($removed)->toBe(['hash-a', 'hash-b'])
+        ->and($this->cache->get('idempotent-index:user:5'))->toBeNull();
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes ?? [])->not->toContain('user:5');
+});
+
+test('forgetMember removes exactly one member and leaves siblings intact', function (): void {
+    $this->index->remember(makeMember(['storageKey' => 'hash-a']));
+    $this->index->remember(makeMember(['storageKey' => 'hash-b']));
+
+    $removed = $this->index->forgetMember(IdempotencyScope::User, '5', 'hash-a');
+
+    expect($removed)->toBeTrue();
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->storageKey)->toBe('hash-b');
+});
+
+test('forgetByClientKey removes every matching member across scopes', function (): void {
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-u5',
+        'scope' => IdempotencyScope::User,
+        'identifier' => '5',
+        'clientKey' => 'abc',
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-ip',
+        'scope' => IdempotencyScope::Ip,
+        'identifier' => '1.2.3.4',
+        'clientKey' => 'abc',
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-other',
+        'scope' => IdempotencyScope::User,
+        'identifier' => '5',
+        'clientKey' => 'xyz',
+    ]));
+
+    $removed = $this->index->forgetByClientKey('abc');
+
+    sort($removed);
+    expect($removed)->toBe(['hash-ip', 'hash-u5']);
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->storageKey)->toBe('hash-other');
+});
+
+test('flush removes every index entry and the scopes set', function (): void {
+    $this->index->remember(makeMember(['storageKey' => 'hash-a']));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-g',
+        'scope' => IdempotencyScope::Global,
+        'identifier' => '',
+    ]));
+
+    $removed = $this->index->flush();
+
+    sort($removed);
+    expect($removed)->toBe(['hash-a', 'hash-g'])
+        ->and($this->cache->get('idempotent-index:user:5'))->toBeNull()
+        ->and($this->cache->get('idempotent-index:global'))->toBeNull()
+        ->and($this->cache->get('idempotent-index:scopes'))->toBeNull();
+});
+
+test('index entry ttl refreshes to the max expiresAt among its members', function (): void {
+    Carbon::setTestNow('2026-01-01 00:00:00');
+    $now = Carbon::now()->getTimestamp();
+
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-short',
+        'createdAt' => $now,
+        'expiresAt' => $now + 60,
+    ]));
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-long',
+        'createdAt' => $now,
+        'expiresAt' => $now + 3600,
+    ]));
+
+    Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00')->addSeconds(120));
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->storageKey)->toBe('hash-long');
+
+    Carbon::setTestNow();
+});
+
+test('forMember returns an empty list when there is no index entry and writes nothing', function (): void {
+    $result = $this->index->forMember(IdempotencyScope::User, '999');
+
+    expect($result)->toBe([])
+        ->and($this->cache->get('idempotent-index:user:999'))->toBeNull()
+        ->and($this->cache->get('idempotent-index:scopes'))->toBeNull();
+});
+
+test('forMember prunes fully expired entries and cleans up the scopes set', function (): void {
+    Carbon::setTestNow('2026-01-01 00:00:00');
+    $now = Carbon::now()->getTimestamp();
+
+    $this->index->remember(makeMember([
+        'createdAt' => $now - 3600,
+        'expiresAt' => $now - 1,
+    ]));
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+
+    expect($members)->toBe([])
+        ->and($this->cache->get('idempotent-index:user:5'))->toBeNull();
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes ?? [])->not->toContain('user:5');
+
+    Carbon::setTestNow();
+});
+
+test('all self-heals a stale scopes-set pointer that no longer has a backing entry', function (): void {
+    $this->cache->forever('idempotent-index:scopes', ['user:999']);
+
+    $result = $this->index->all();
+
+    expect($result)->toBe([]);
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes ?? [])->not->toContain('user:999');
+});
+
+test('forget global works without requiring a non-empty identifier', function (): void {
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-g',
+        'scope' => IdempotencyScope::Global,
+        'identifier' => '',
+    ]));
+
+    $removed = $this->index->forget(IdempotencyScope::Global, '');
+
+    expect($removed)->toBe(['hash-g'])
+        ->and($this->cache->get('idempotent-index:global'))->toBeNull();
+});
+
+test('remember refreshes the scopes set even when the entry pointer already exists', function (): void {
+    Carbon::setTestNow('2026-01-01 00:00:00');
+    $now = Carbon::now()->getTimestamp();
+
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-short',
+        'createdAt' => $now,
+        'expiresAt' => $now + 60,
+    ]));
+
+    $this->index->remember(makeMember([
+        'storageKey' => 'hash-long',
+        'createdAt' => $now,
+        'expiresAt' => $now + 3600,
+    ]));
+
+    Carbon::setTestNow(Carbon::parse('2026-01-01 00:00:00')->addSeconds(120));
+
+    $scopes = $this->cache->get('idempotent-index:scopes');
+    expect($scopes)->toContain('user:5');
+
+    Carbon::setTestNow();
+});
+
+test('forgetByClientKey with no matches returns an empty list', function (): void {
+    $this->index->remember(makeMember(['clientKey' => 'real']));
+
+    $removed = $this->index->forgetByClientKey('ghost');
+
+    expect($removed)->toBe([]);
+
+    $members = $this->index->forMember(IdempotencyScope::User, '5');
+    expect($members)->toHaveCount(1);
+});
+
+test('service provider registers both commands with Artisan', function (): void {
+    expect(array_keys(Artisan::all()))
+        ->toContain('idempotency:forget', 'idempotency:list');
+});

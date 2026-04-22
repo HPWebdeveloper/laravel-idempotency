@@ -121,6 +121,34 @@ class PaymentController
 - verify in-flight duplicate requests return `409` with `Retry-After: 1`
 - verify missing headers only pass through when `required` is disabled
 
+### 9. Maintain cached entries
+
+Use the maintenance commands when debugging replay behavior, purging entries after a compromised key, or inspecting cache usage during incident response.
+
+- inspect cached entries with `php artisan idempotency:list`
+- filter listings by scope or identity when the cache is large:
+
+```bash
+php artisan idempotency:list --scope=user --id=5
+php artisan idempotency:list --scope=global
+php artisan idempotency:list --limit=20
+```
+
+- purge entries when replay behavior is the wrong thing to keep:
+
+```bash
+# remove everything (prompts unless --force is passed)
+php artisan idempotency:forget --all --force
+
+# scoped removal
+php artisan idempotency:forget --scope=user --id=5 --force
+php artisan idempotency:forget --scope=ip --id=1.2.3.4 --force
+php artisan idempotency:forget --scope=global --force
+
+# purge everything tied to a single client-provided key
+php artisan idempotency:forget --key=checkout-1 --force
+```
+
 ## Rules, References, and Templates
 
 Read before executing:

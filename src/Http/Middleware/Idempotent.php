@@ -9,11 +9,14 @@ use Illuminate\Cache\Repository;
 use Illuminate\Contracts\Cache\LockProvider;
 use Illuminate\Http\Request;
 use Illuminate\Http\Response;
+use Illuminate\Support\Carbon;
 use Symfony\Component\HttpFoundation\Response as SymfonyResponse;
 use Symfony\Component\HttpKernel\Exception\HttpException;
 use WendellAdriel\Idempotency\Enums\IdempotencyScope;
 use WendellAdriel\Idempotency\Support\IdempotencyCache;
+use WendellAdriel\Idempotency\Support\IdempotencyIndex;
 use WendellAdriel\Idempotency\Support\IdempotencyOptions;
+use WendellAdriel\Idempotency\Support\IndexMember;
 use WendellAdriel\Idempotency\Support\RequestFingerprint;
 use WendellAdriel\Idempotency\Support\ScopeResolver;
 use WendellAdriel\Idempotency\Support\StoredResponse;
@@ -23,6 +26,7 @@ final readonly class Idempotent
     public function __construct(
         private Repository $cache,
         private IdempotencyCache $idempotencyCache,
+        private IdempotencyIndex $idempotencyIndex,
         private ScopeResolver $scopeResolver,
         private RequestFingerprint $fingerprint,
     ) {}
@@ -64,7 +68,10 @@ final readonly class Idempotent
             return $next($request);
         }
 
-        $scopePrefix = $this->scopeResolver->resolve($request, $options->scope);
+        [$resolvedScope, $identifier] = $this->scopeResolver->describe($request, $options->scope);
+        $scopePrefix = $resolvedScope === IdempotencyScope::Global
+            ? IdempotencyScope::Global->value
+            : sprintf('%s:%s', $resolvedScope->value, $identifier);
         $storageKey = $this->fingerprint->storageKey($request, $scopePrefix, $options->header, $clientKey);
         $fingerprint = $this->fingerprint->fingerprint($request);
         $stored = $this->idempotencyCache->get($storageKey);
@@ -101,6 +108,19 @@ final readonly class Idempotent
                 $this->idempotencyCache->serializeResponse($response, $fingerprint),
                 $options->ttl,
             );
+
+            $now = Carbon::now()->getTimestamp();
+            $this->idempotencyIndex->remember(new IndexMember(
+                storageKey: $storageKey,
+                scope: $resolvedScope,
+                identifier: $identifier,
+                clientKey: $clientKey,
+                route: $this->fingerprint->routeIdentity($request),
+                method: strtoupper($request->method()),
+                status: $response->getStatusCode(),
+                createdAt: $now,
+                expiresAt: $now + $options->ttl,
+            ));
 
             return $response;
         } finally {

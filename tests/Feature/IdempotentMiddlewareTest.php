@@ -10,6 +10,7 @@ use Illuminate\Routing\Redirector;
 use Illuminate\Support\Facades\Route;
 use WendellAdriel\Idempotency\Enums\IdempotencyScope;
 use WendellAdriel\Idempotency\Http\Middleware\Idempotent;
+use WendellAdriel\Idempotency\Support\IdempotencyIndex;
 
 beforeEach(function (): void {
     Route::middleware('web')->group(function (): void {
@@ -350,4 +351,132 @@ test('patch requests are idempotency managed', function (): void {
 
 test('put requests are idempotency managed', function (): void {
     $this->putJson('/orders/1', ['item' => 'widget'])->assertBadRequest();
+});
+
+test('stored response writes a matching index member', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $members = $index->forMember(IdempotencyScope::Ip, '127.0.0.1');
+
+    expect($members)->toHaveCount(1);
+
+    $member = $members[0];
+    expect($member->scope)->toBe(IdempotencyScope::Ip)
+        ->and($member->identifier)->toBe('127.0.0.1')
+        ->and($member->clientKey)->toBe('key-1')
+        ->and($member->route)->toBe('orders.store')
+        ->and($member->method)->toBe('POST')
+        ->and($member->status)->toBe(200)
+        ->and($member->expiresAt)->toBeGreaterThan($member->createdAt);
+});
+
+test('replayed request does not add or mutate the index entry', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $before = array_map(fn ($m) => $m->toArray(), $index->forMember(IdempotencyScope::Ip, '127.0.0.1'));
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertHeader('Idempotency-Replayed', 'true');
+
+    $after = array_map(fn ($m) => $m->toArray(), $index->forMember(IdempotencyScope::Ip, '127.0.0.1'));
+
+    expect($after)->toBe($before);
+});
+
+test('user scope stores the member under the user scope index', function (): void {
+    $this->actingAs(new GenericUser(['id' => 7]))
+        ->postJson('/orders/user-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $members = $index->forMember(IdempotencyScope::User, '7');
+
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->scope)->toBe(IdempotencyScope::User)
+        ->and($members[0]->identifier)->toBe('7');
+});
+
+test('ip scope stores the member under the ip scope index', function (): void {
+    $this->postJson('/orders/ip-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $members = $index->forMember(IdempotencyScope::Ip, '127.0.0.1');
+
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->scope)->toBe(IdempotencyScope::Ip)
+        ->and($members[0]->identifier)->toBe('127.0.0.1');
+});
+
+test('global scope stores the member under the global scope index', function (): void {
+    $this->postJson('/orders/global-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $members = $index->forMember(IdempotencyScope::Global, '');
+
+    expect($members)->toHaveCount(1)
+        ->and($members[0]->scope)->toBe(IdempotencyScope::Global)
+        ->and($members[0]->identifier)->toBe('');
+});
+
+test('routes accessed by uri record the uri in the route field', function (): void {
+    $this->postJson('/orders/ip-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $index = $this->app->make(IdempotencyIndex::class);
+    $members = $index->forMember(IdempotencyScope::Ip, '127.0.0.1');
+
+    expect($members[0]->route)->toBe('/orders/ip-scope');
+});
+
+test('non target methods do not write an index entry', function (): void {
+    $this->getJson('/orders/index')->assertOk();
+    $this->deleteJson('/orders/1')->assertOk();
+
+    $index = $this->app->make(IdempotencyIndex::class);
+
+    expect($index->all())->toBe([]);
+});
+
+test('missing optional header does not write an index entry', function (): void {
+    $this->postJson('/orders/optional', ['item' => 'widget'])->assertOk();
+
+    $index = $this->app->make(IdempotencyIndex::class);
+
+    expect($index->all())->toBe([]);
+});
+
+test('exception inside next does not write an index entry', function (): void {
+    $this->withoutExceptionHandling();
+
+    try {
+        $this->postJson('/orders/exception', ['item' => 'widget'], ['Idempotency-Key' => 'key-exc']);
+    } catch (RuntimeException) {
+        // expected
+    }
+
+    $index = $this->app->make(IdempotencyIndex::class);
+
+    expect($index->all())->toBe([]);
+});
+
+test('conflict response does not write an index entry', function (): void {
+    /** @var Cache $cache */
+    $cache = $this->app->make(Cache::class);
+
+    $storageKey = hash('xxh128', implode('|', [
+        'orders.store',
+        'POST',
+        'ip:127.0.0.1',
+        'Idempotency-Key',
+        'key-conflict',
+    ]));
+
+    $cache->lock('idempotent-lock:' . $storageKey, 10)->get();
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-conflict'])
+        ->assertConflict();
+
+    $index = $this->app->make(IdempotencyIndex::class);
+
+    expect($index->all())->toBe([]);
 });

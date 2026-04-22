@@ -31,7 +31,7 @@ final class RequestFingerprint
         ]));
     }
 
-    private function routeIdentity(Request $request): string
+    public function routeIdentity(Request $request): string
     {
         /** @var Route|null $route */
         $route = $request->route();

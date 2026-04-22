@@ -9,8 +9,11 @@ use Illuminate\Contracts\Foundation\Application;
 use Illuminate\Routing\Router;
 use Illuminate\Support\ServiceProvider;
 use Override;
+use WendellAdriel\Idempotency\Console\Commands\ForgetCommand;
+use WendellAdriel\Idempotency\Console\Commands\ListCommand;
 use WendellAdriel\Idempotency\Http\Middleware\Idempotent;
 use WendellAdriel\Idempotency\Support\IdempotencyCache;
+use WendellAdriel\Idempotency\Support\IdempotencyIndex;
 
 final class IdempotencyServiceProvider extends ServiceProvider
 {
@@ -22,6 +25,13 @@ final class IdempotencyServiceProvider extends ServiceProvider
             ],
             ['idempotency', 'idempotency-config']
         );
+
+        if ($this->app->runningInConsole()) {
+            $this->commands([
+                ForgetCommand::class,
+                ListCommand::class,
+            ]);
+        }
     }
 
     #[Override]
@@ -34,6 +44,13 @@ final class IdempotencyServiceProvider extends ServiceProvider
             $cache = $app->make('cache.store');
 
             return new IdempotencyCache($cache);
+        });
+
+        $this->app->singleton(IdempotencyIndex::class, function (Application $app): IdempotencyIndex {
+            /** @var Repository $cache */
+            $cache = $app->make('cache.store');
+
+            return new IdempotencyIndex($cache);
         });
 
         $this->app->afterResolving(Router::class, function (Router $router): void {
