@@ -3,9 +3,11 @@
 declare(strict_types=1);
 
 use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Routing\Router;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Artisan;
 use WendellAdriel\Idempotency\Enums\IdempotencyScope;
+use WendellAdriel\Idempotency\Http\Middleware\Idempotent;
 use WendellAdriel\Idempotency\Support\IdempotencyIndex;
 use WendellAdriel\Idempotency\Support\IndexMember;
 
@@ -325,4 +327,11 @@ test('forgetByClientKey with no matches returns an empty list', function (): voi
 test('service provider registers both commands with Artisan', function (): void {
     expect(array_keys(Artisan::all()))
         ->toContain('idempotency:forget', 'idempotency:list');
+});
+
+test('service provider registers the idempotent route middleware alias', function (): void {
+    $aliases = $this->app->make(Router::class)->getMiddleware();
+
+    expect($aliases)->toHaveKey('idempotent')
+        ->and($aliases['idempotent'])->toBe(Idempotent::class);
 });

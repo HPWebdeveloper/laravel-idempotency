@@ -26,6 +26,8 @@ final class IdempotencyServiceProvider extends ServiceProvider
             ['idempotency', 'idempotency-config']
         );
 
+        $this->app->make(Router::class)->aliasMiddleware('idempotent', Idempotent::class);
+
         if ($this->app->runningInConsole()) {
             $this->commands([
                 ForgetCommand::class,
@@ -51,10 +53,6 @@ final class IdempotencyServiceProvider extends ServiceProvider
             $cache = $app->make('cache.store');
 
             return new IdempotencyIndex($cache);
-        });
-
-        $this->app->afterResolving(Router::class, function (Router $router): void {
-            $router->aliasMiddleware('idempotent', Idempotent::class);
         });
     }
 }
