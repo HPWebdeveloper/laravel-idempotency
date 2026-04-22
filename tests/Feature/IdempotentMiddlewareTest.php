@@ -1,0 +1,353 @@
+<?php
+
+declare(strict_types=1);
+
+use Illuminate\Auth\GenericUser;
+use Illuminate\Contracts\Cache\Repository as Cache;
+use Illuminate\Http\RedirectResponse;
+use Illuminate\Http\Request;
+use Illuminate\Routing\Redirector;
+use Illuminate\Support\Facades\Route;
+use WendellAdriel\Idempotency\Enums\IdempotencyScope;
+use WendellAdriel\Idempotency\Http\Middleware\Idempotent;
+
+beforeEach(function (): void {
+    Route::middleware('web')->group(function (): void {
+        Route::post('/orders', function () {
+            test()->controllerExecutionCount++;
+
+            return response()->json(['id' => 1]);
+        })->middleware(Idempotent::class)->name('orders.store');
+
+        Route::post('/orders/created', fn () => response()->json(['created' => true], 201)->header('X-Custom', 'value'))->middleware(Idempotent::class);
+
+        Route::post('/orders/optional', fn () => response()->json(['id' => 1]))->middleware(Idempotent::using(required: false));
+
+        Route::post('/orders/custom-header', function () {
+            test()->controllerExecutionCount++;
+
+            return response()->json(['id' => 1]);
+        })->middleware(Idempotent::using(header: 'X-Idempotency-Key'));
+
+        Route::post('/orders/user-scope', fn () => response()->json(['id' => 1]))->middleware(Idempotent::using(scope: IdempotencyScope::User));
+
+        Route::post('/orders/ip-scope', fn () => response()->json(['id' => 1]))->middleware(Idempotent::using(scope: IdempotencyScope::Ip));
+
+        Route::post('/orders/global-scope', function () {
+            test()->controllerExecutionCount++;
+
+            return response()->json(['id' => 1]);
+        })->middleware(Idempotent::using(scope: IdempotencyScope::Global));
+
+        Route::post('/orders/query', fn () => response()->json(['id' => 1]))->middleware(Idempotent::class);
+
+        Route::post('/orders/json-normalized', function () {
+            test()->controllerExecutionCount++;
+
+            return response()->json(['id' => 1]);
+        })->middleware(Idempotent::class);
+
+        Route::post('/orders/redirect', function (): Redirector|RedirectResponse {
+            test()->controllerExecutionCount++;
+
+            return redirect('/orders/1');
+        })->middleware(Idempotent::class);
+
+        Route::post('/orders/exception', function (): void {
+            throw new RuntimeException('Boom');
+        })->middleware(Idempotent::class);
+
+        Route::post('/orders/validation', function (Request $request) {
+            $request->validate(['item' => 'required']);
+
+            return response()->json(['id' => 1]);
+        })->middleware(Idempotent::class);
+
+        Route::post('/refunds', fn () => response()->json(['type' => 'refund']))->middleware(Idempotent::class)->name('refunds.store');
+
+        Route::put('/orders', fn () => response()->json(['method' => 'put']))->middleware(Idempotent::class);
+
+        Route::put('/orders/1', fn () => response()->json(['updated' => true]))->middleware(Idempotent::class);
+
+        Route::patch('/orders/1', fn () => response()->json(['updated' => true]))->middleware(Idempotent::class);
+
+        Route::get('/orders/index', fn () => response()->json(['id' => 1]))->middleware(Idempotent::class);
+
+        Route::delete('/orders/1', fn () => response()->json(['deleted' => true]))->middleware(Idempotent::class);
+    });
+
+    $this->controllerExecutionCount = 0;
+});
+
+test('first request caches the response', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertJson(['id' => 1])
+        ->assertHeaderMissing('Idempotency-Replayed');
+});
+
+test('same key and payload replays the response with a header', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertJson(['id' => 1])
+        ->assertHeader('Idempotency-Replayed', 'true');
+});
+
+test('replayed response preserves original status body and headers', function (): void {
+    $this->postJson('/orders/created', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders/created', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertCreated()
+        ->assertJson(['created' => true])
+        ->assertHeader('X-Custom', 'value')
+        ->assertHeader('Idempotency-Replayed', 'true');
+});
+
+test('replayed response does not execute the controller again', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('same key with different payload returns 422', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders', ['item' => 'different'], ['Idempotency-Key' => 'key-1'])
+        ->assertUnprocessable();
+});
+
+test('same key with different query string returns 422', function (): void {
+    $this->postJson('/orders/query?source=web', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders/query?source=mobile', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertUnprocessable();
+});
+
+test('same key on different route does not collide', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/refunds', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertJson(['type' => 'refund'])
+        ->assertHeaderMissing('Idempotency-Replayed');
+});
+
+test('same key on different method does not collide', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->putJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertJson(['method' => 'put'])
+        ->assertHeaderMissing('Idempotency-Replayed');
+});
+
+test('concurrent in flight duplicate returns 409 with retry after', function (): void {
+    /** @var Cache $cache */
+    $cache = $this->app->make(Cache::class);
+
+    $storageKey = hash('xxh128', implode('|', [
+        'orders.store',
+        'POST',
+        'ip:127.0.0.1',
+        'Idempotency-Key',
+        'key-conflict',
+    ]));
+
+    $cache->lock('idempotent-lock:' . $storageKey, 10)->get();
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-conflict'])
+        ->assertConflict()
+        ->assertHeader('Retry-After', '1');
+});
+
+test('missing key returns 400 when required', function (): void {
+    $this->postJson('/orders', ['item' => 'widget'])->assertBadRequest();
+});
+
+test('missing key passes through when optional', function (): void {
+    $this->postJson('/orders/optional', ['item' => 'widget'])
+        ->assertOk()
+        ->assertJson(['id' => 1]);
+});
+
+test('custom header name works when configured on middleware', function (): void {
+    $this->postJson('/orders/custom-header', ['item' => 'widget'], ['X-Idempotency-Key' => 'custom-key-1']);
+
+    $this->postJson('/orders/custom-header', ['item' => 'widget'], ['X-Idempotency-Key' => 'custom-key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('default header is ignored when custom header is configured', function (): void {
+    $this->postJson('/orders/custom-header', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertBadRequest();
+});
+
+test('user scope isolates different authenticated users', function (): void {
+    $userOne = new GenericUser(['id' => 1]);
+    $userTwo = new GenericUser(['id' => 2]);
+
+    $this->actingAs($userOne)
+        ->postJson('/orders/user-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->actingAs($userTwo)
+        ->postJson('/orders/user-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeaderMissing('Idempotency-Replayed');
+});
+
+test('user scope falls back to ip for guests', function (): void {
+    $this->postJson('/orders/user-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders/user-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+});
+
+test('ip scope isolates by ip', function (): void {
+    $this->postJson('/orders/ip-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk();
+
+    $this->postJson('/orders/ip-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+});
+
+test('global scope ignores user and ip segmentation', function (): void {
+    $userOne = new GenericUser(['id' => 1]);
+    $userTwo = new GenericUser(['id' => 2]);
+
+    $this->actingAs($userOne)
+        ->postJson('/orders/global-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->actingAs($userTwo)
+        ->postJson('/orders/global-scope', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('non target methods pass through untouched', function (): void {
+    $this->getJson('/orders/index')->assertOk();
+    $this->deleteJson('/orders/1')->assertOk();
+});
+
+test('json normalization avoids false mismatches caused by key order', function (): void {
+    $this->postJson('/orders/json-normalized', ['b' => 2, 'a' => 1], ['Idempotency-Key' => 'key-1']);
+
+    $this->postJson('/orders/json-normalized', ['a' => 1, 'b' => 2], ['Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('redirects can be replayed', function (): void {
+    $this->post('/orders/redirect', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+
+    $this->post('/orders/redirect', ['item' => 'widget'], ['Idempotency-Key' => 'key-1'])
+        ->assertRedirect('/orders/1')
+        ->assertHeader('Idempotency-Replayed', 'true');
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('validation exceptions do not poison the stored response', function (): void {
+    $this->postJson('/orders/validation', [], ['Idempotency-Key' => 'key-1'])
+        ->assertUnprocessable();
+
+    $this->postJson('/orders/validation', ['item' => 'widget'], ['Idempotency-Key' => 'key-2'])
+        ->assertOk()
+        ->assertJson(['id' => 1]);
+});
+
+test('lock is released after downstream exceptions', function (): void {
+    $this->withoutExceptionHandling();
+
+    try {
+        $this->postJson('/orders/exception', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+    } catch (RuntimeException $exception) {
+        expect($exception->getMessage())->toBe('Boom');
+    }
+
+    $response = null;
+
+    try {
+        $this->postJson('/orders/exception', ['item' => 'widget'], ['Idempotency-Key' => 'key-1']);
+    } catch (RuntimeException $exception) {
+        $response = $exception;
+    }
+
+    expect($response)->toBeInstanceOf(RuntimeException::class);
+});
+
+test('using generates the correct middleware string', function (): void {
+    expect(Idempotent::using())
+        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key')
+        ->and(Idempotent::using(ttl: 600))
+        ->toBe(Idempotent::class . ':600,1,user,Idempotency-Key')
+        ->and(Idempotent::using(required: false, scope: IdempotencyScope::Ip, header: 'X-Idempotency-Key'))
+        ->toBe(Idempotent::class . ':3600,0,ip,X-Idempotency-Key');
+});
+
+test('omitted middleware options pull defaults from config', function (): void {
+    config()->set('idempotency.ttl', 120);
+    config()->set('idempotency.required', false);
+    config()->set('idempotency.scope', 'global');
+    config()->set('idempotency.header', 'X-Config-Idempotency-Key');
+
+    Route::post('/orders/config-defaults', fn () => response()->json(['id' => 1]))->middleware(Idempotent::class);
+
+    $this->postJson('/orders/config-defaults', ['item' => 'widget'])
+        ->assertOk()
+        ->assertJson(['id' => 1]);
+
+    $this->postJson('/orders/config-defaults', ['item' => 'widget'], ['X-Config-Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeaderMissing('Idempotency-Replayed');
+
+    $this->postJson('/orders/config-defaults', ['item' => 'widget'], ['X-Config-Idempotency-Key' => 'key-1'])
+        ->assertOk()
+        ->assertHeader('Idempotency-Replayed', 'true');
+});
+
+test('conflict path does not cache a placeholder response', function (): void {
+    /** @var Cache $cache */
+    $cache = $this->app->make(Cache::class);
+
+    $storageKey = hash('xxh128', implode('|', [
+        'orders.store',
+        'POST',
+        'ip:127.0.0.1',
+        'Idempotency-Key',
+        'key-conflict',
+    ]));
+
+    $lock = $cache->lock('idempotent-lock:' . $storageKey, 10);
+    $lock->get();
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-conflict'])
+        ->assertConflict();
+
+    $lock->release();
+
+    $this->postJson('/orders', ['item' => 'widget'], ['Idempotency-Key' => 'key-conflict'])
+        ->assertOk()
+        ->assertJson(['id' => 1]);
+
+    expect($this->controllerExecutionCount)->toBe(1);
+});
+
+test('patch requests are idempotency managed', function (): void {
+    $this->patchJson('/orders/1', ['item' => 'widget'])->assertBadRequest();
+});
+
+test('put requests are idempotency managed', function (): void {
+    $this->putJson('/orders/1', ['item' => 'widget'])->assertBadRequest();
+});
