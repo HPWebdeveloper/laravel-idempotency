@@ -299,6 +299,16 @@ test('using generates the correct middleware string', function (): void {
         ->toBe(Idempotent::class . ':3600,0,ip,X-Idempotency-Key,10');
 });
 
+test('zero lock_timeout on using() throws', function (): void {
+    expect(fn () => Idempotent::using(lockTimeout: 0))
+        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+});
+
+test('negative lock_timeout on using() throws', function (): void {
+    expect(fn () => Idempotent::using(lockTimeout: -1))
+        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+});
+
 test('omitted middleware options pull defaults from config', function (): void {
     config()->set('idempotency.ttl', 120);
     config()->set('idempotency.required', false);

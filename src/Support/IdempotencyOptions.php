@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WendellAdriel\Idempotency\Support;
 
+use InvalidArgumentException;
 use WendellAdriel\Idempotency\Enums\IdempotencyScope;
 
 final readonly class IdempotencyOptions
@@ -56,13 +57,17 @@ final readonly class IdempotencyOptions
 
     private static function resolveLockTimeout(null|int|string $lockTimeout): int
     {
-        if (is_int($lockTimeout)) {
-            return $lockTimeout;
+        $resolved = is_int($lockTimeout)
+            ? $lockTimeout
+            : ($lockTimeout !== null
+                ? (int) $lockTimeout
+                : config()->integer('idempotency.lock_timeout'));
+
+        if ($resolved < 1) {
+            throw new InvalidArgumentException('The lock_timeout must be a positive integer (>= 1).');
         }
 
-        return $lockTimeout !== null
-            ? (int) $lockTimeout
-            : config()->integer('idempotency.lock_timeout');
+        return $resolved;
     }
 
     private static function resolveRequired(null|bool|string $required): bool
