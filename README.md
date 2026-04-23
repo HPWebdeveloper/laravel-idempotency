@@ -49,6 +49,7 @@ This will publish the package configuration to `config/idempotency.php`.
 ```php
 return [
     'ttl' => env('IDEMPOTENCY_TTL', 3600),
+    'lock_timeout' => env('IDEMPOTENCY_LOCK_TIMEOUT', 10),
     'required' => env('IDEMPOTENCY_REQUIRED', true),
     'scope' => env('IDEMPOTENCY_SCOPE', IdempotencyScope::User->value),
     'header' => env('IDEMPOTENCY_HEADER', 'Idempotency-Key'),
@@ -57,12 +58,13 @@ return [
 
 The available options are:
 
-| Option | Description |
-| --- | --- |
-| `ttl` | The number of seconds a stored response should remain available. |
-| `required` | Determines whether the configured idempotency header is required. |
-| `scope` | Controls how keys are segmented. Supported values are `user`, `ip`, and `global`. |
-| `header` | The request header the package should inspect for the client-provided idempotency key. |
+| Option         | Description                                                                                                                                         |
+| -------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ttl`          | The number of seconds a stored response should remain available.                                                                                    |
+| `lock_timeout` | The number of seconds the in-flight atomic lock is held while a request is being processed. Increase this for endpoints with long processing times. |
+| `required`     | Determines whether the configured idempotency header is required.                                                                                   |
+| `scope`        | Controls how keys are segmented. Supported values are `user`, `ip`, and `global`.                                                                   |
+| `header`       | The request header the package should inspect for the client-provided idempotency key.                                                              |
 
 ## Usage
 
@@ -93,6 +95,7 @@ If you need to customize the middleware, use the `Idempotent::using` helper when
 Route::post('/payments', ChargePaymentController::class)->middleware(
     Idempotent::using(
         ttl: 600,
+        lockTimeout: 30,
         required: false,
         scope: \WendellAdriel\Idempotency\Enums\IdempotencyScope::Ip,
         header: 'X-Idempotency-Key',
@@ -108,7 +111,7 @@ Route::post('/orders', StoreOrderController::class)->middleware('idempotent');
 
 ### Attribute
 
-If you prefer attributes, you may use the package's `#[Idempotent]` attribute. The attribute applies the same middleware and accepts the same `ttl`, `required`, `scope`, and `header` options.
+If you prefer attributes, you may use the package's `#[Idempotent]` attribute. The attribute applies the same middleware and accepts the same `ttl`, `lockTimeout`, `required`, `scope`, and `header` options.
 
 ```php
 <?php
@@ -141,7 +144,7 @@ use WendellAdriel\Idempotency\Enums\IdempotencyScope;
 #[Idempotent]
 class PaymentController
 {
-    #[Idempotent(ttl: 600, scope: IdempotencyScope::Ip, header: 'X-Idempotency-Key')]
+    #[Idempotent(ttl: 600, lockTimeout: 30, scope: IdempotencyScope::Ip, header: 'X-Idempotency-Key')]
     public function store()
     {
         // ...

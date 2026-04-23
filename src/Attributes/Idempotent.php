@@ -21,6 +21,7 @@ final class Idempotent extends Middleware
         ?bool $required = null,
         ?IdempotencyScope $scope = null,
         ?string $header = null,
+        ?int $lockTimeout = null,
         ?array $only = null,
         ?array $except = null,
     ) {
@@ -30,6 +31,7 @@ final class Idempotent extends Middleware
                 required: $required,
                 scope: $scope,
                 header: $header,
+                lockTimeout: $lockTimeout,
             ),
             $only,
             $except,

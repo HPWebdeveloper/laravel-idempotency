@@ -290,11 +290,31 @@ test('lock is released after downstream exceptions', function (): void {
 
 test('using generates the correct middleware string', function (): void {
     expect(Idempotent::using())
-        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key')
+        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key,10')
         ->and(Idempotent::using(ttl: 600))
-        ->toBe(Idempotent::class . ':600,1,user,Idempotency-Key')
+        ->toBe(Idempotent::class . ':600,1,user,Idempotency-Key,10')
+        ->and(Idempotent::using(lockTimeout: 45))
+        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key,45')
         ->and(Idempotent::using(required: false, scope: IdempotencyScope::Ip, header: 'X-Idempotency-Key'))
-        ->toBe(Idempotent::class . ':3600,0,ip,X-Idempotency-Key');
+        ->toBe(Idempotent::class . ':3600,0,ip,X-Idempotency-Key,10');
+});
+
+test('zero lock_timeout on using() throws', function (): void {
+    expect(fn (): string => Idempotent::using(lockTimeout: 0))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+});
+
+test('negative lock_timeout on using() throws', function (): void {
+    expect(fn (): string => Idempotent::using(lockTimeout: -1))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+});
+
+test('using() accepts the legacy positional argument order', function (): void {
+    // Regression: the public API must keep the pre-lockTimeout positional order
+    // (ttl, required, scope, header) working unchanged.
+    // lockTimeout is omitted, so it falls back to the config default (10).
+    expect(Idempotent::using(600, false, IdempotencyScope::Ip, 'X-Idempotency-Key'))
+        ->toBe(Idempotent::class . ':600,0,ip,X-Idempotency-Key,10');
 });
 
 test('omitted middleware options pull defaults from config', function (): void {

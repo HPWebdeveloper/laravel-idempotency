@@ -36,12 +36,14 @@ final readonly class Idempotent
         ?bool $required = null,
         ?IdempotencyScope $scope = null,
         ?string $header = null,
+        ?int $lockTimeout = null,
     ): string {
         return self::class . ':' . IdempotencyOptions::resolve(
             ttl: $ttl,
             required: $required,
             scope: $scope,
             header: $header,
+            lockTimeout: $lockTimeout,
         )->serialize();
     }
 
@@ -52,12 +54,19 @@ final readonly class Idempotent
         null|bool|string $required = null,
         null|string|IdempotencyScope $scope = null,
         ?string $header = null,
+        null|int|string $lockTimeout = null,
     ): SymfonyResponse {
         if (! $this->isIdempotentMethod($request)) {
             return $next($request);
         }
 
-        $options = IdempotencyOptions::resolve($ttl, $required, $scope, $header);
+        $options = IdempotencyOptions::resolve(
+            ttl: $ttl,
+            required: $required,
+            scope: $scope,
+            header: $header,
+            lockTimeout: $lockTimeout,
+        );
         $clientKey = $request->header($options->header);
 
         if (! is_string($clientKey) || $clientKey === '') {
@@ -90,7 +99,7 @@ final readonly class Idempotent
             throw new HttpException(Response::HTTP_INTERNAL_SERVER_ERROR, 'The configured cache store does not support atomic locks.');
         }
 
-        $lock = $store->lock($this->idempotencyCache->lockKey($storageKey), 10);
+        $lock = $store->lock($this->idempotencyCache->lockKey($storageKey), $options->lockTimeout);
 
         if (! $lock->get()) {
             throw new HttpException(Response::HTTP_CONFLICT, 'A request with this idempotency key is currently being processed.', null, ['Retry-After' => '1']);

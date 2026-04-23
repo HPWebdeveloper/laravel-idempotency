@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace WendellAdriel\Idempotency\Support;
 
+use InvalidArgumentException;
 use WendellAdriel\Idempotency\Enums\IdempotencyScope;
 
 final readonly class IdempotencyOptions
@@ -13,6 +14,7 @@ final readonly class IdempotencyOptions
         public bool $required,
         public IdempotencyScope $scope,
         public string $header,
+        public int $lockTimeout,
     ) {}
 
     public static function resolve(
@@ -20,12 +22,14 @@ final readonly class IdempotencyOptions
         null|bool|string $required = null,
         null|string|IdempotencyScope $scope = null,
         ?string $header = null,
+        null|int|string $lockTimeout = null,
     ): self {
         return new self(
             ttl: self::resolveTtl($ttl),
             required: self::resolveRequired($required),
             scope: IdempotencyScope::fromConfig($scope),
             header: $header ?? config()->string('idempotency.header'),
+            lockTimeout: self::resolveLockTimeout($lockTimeout),
         );
     }
 
@@ -36,6 +40,7 @@ final readonly class IdempotencyOptions
             $this->required ? '1' : '0',
             $this->scope->value,
             $this->header,
+            $this->lockTimeout,
         ]);
     }
 
@@ -48,6 +53,21 @@ final readonly class IdempotencyOptions
         return $ttl !== null
             ? (int) $ttl
             : config()->integer('idempotency.ttl');
+    }
+
+    private static function resolveLockTimeout(null|int|string $lockTimeout): int
+    {
+        $resolved = is_int($lockTimeout)
+            ? $lockTimeout
+            : ($lockTimeout !== null
+                ? (int) $lockTimeout
+                : config()->integer('idempotency.lock_timeout'));
+
+        if ($resolved < 1) {
+            throw new InvalidArgumentException('The lock_timeout must be a positive integer (>= 1).');
+        }
+
+        return $resolved;
     }
 
     private static function resolveRequired(null|bool|string $required): bool
