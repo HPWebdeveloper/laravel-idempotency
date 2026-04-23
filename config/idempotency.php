@@ -52,10 +52,10 @@ return [
     | Idempotency Lock Timeout
     |--------------------------------------------------------------------------
     |
-    | Number of seconds the atomic in-flight lock is held while a request is
-    | being processed. If a request takes longer than this value the lock
-    | expires and a concurrent request with the same key will be allowed to
-    | proceed. Increase this value for endpoints with long processing times.
+    | Number of seconds the atomic in-flight lock is held while a request
+    | is being processed. If a request takes longer than this value, the
+    | lock expires and a concurrent request with same key may proceed.
+    | Increase this value for endpoints with long processing times.
     |
     */
     'lock_timeout' => env('IDEMPOTENCY_LOCK_TIMEOUT', 10),

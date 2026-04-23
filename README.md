@@ -111,7 +111,7 @@ Route::post('/orders', StoreOrderController::class)->middleware('idempotent');
 
 ### Attribute
 
-If you prefer attributes, you may use the package's `#[Idempotent]` attribute. The attribute applies the same middleware and accepts the same `ttl`, `lock_timeout`, `required`, `scope`, and `header` options.
+If you prefer attributes, you may use the package's `#[Idempotent]` attribute. The attribute applies the same middleware and accepts the same `ttl`, `lockTimeout`, `required`, `scope`, and `header` options.
 
 ```php
 <?php

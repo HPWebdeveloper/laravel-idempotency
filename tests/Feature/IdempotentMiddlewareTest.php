@@ -300,13 +300,13 @@ test('using generates the correct middleware string', function (): void {
 });
 
 test('zero lock_timeout on using() throws', function (): void {
-    expect(fn () => Idempotent::using(lockTimeout: 0))
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): string => Idempotent::using(lockTimeout: 0))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('negative lock_timeout on using() throws', function (): void {
-    expect(fn () => Idempotent::using(lockTimeout: -1))
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): string => Idempotent::using(lockTimeout: -1))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('using() accepts the legacy positional argument order', function (): void {

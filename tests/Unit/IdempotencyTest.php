@@ -46,27 +46,27 @@ test('it supports env-backed config overrides', function (): void {
 });
 
 test('lock_timeout of zero is rejected', function (): void {
-    expect(fn () => IdempotencyOptions::resolve(lockTimeout: 0))
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): IdempotencyOptions => IdempotencyOptions::resolve(lockTimeout: 0))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('negative lock_timeout is rejected', function (): void {
-    expect(fn () => IdempotencyOptions::resolve(lockTimeout: -5))
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): IdempotencyOptions => IdempotencyOptions::resolve(lockTimeout: -5))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('lock_timeout of zero from config is rejected', function (): void {
     config()->set('idempotency.lock_timeout', 0);
 
-    expect(fn () => IdempotencyOptions::resolve())
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): IdempotencyOptions => IdempotencyOptions::resolve())
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('negative lock_timeout from config is rejected', function (): void {
     config()->set('idempotency.lock_timeout', -3);
 
-    expect(fn () => IdempotencyOptions::resolve())
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): IdempotencyOptions => IdempotencyOptions::resolve())
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
 
 test('lock_timeout of one is the minimum accepted value', function (): void {
@@ -77,6 +77,6 @@ test('lock_timeout of one is the minimum accepted value', function (): void {
 
 test('string-form negative lock_timeout is rejected', function (): void {
     // Route middleware parameters arrive as strings (e.g. "idempotent:...,-1").
-    expect(fn () => IdempotencyOptions::resolve(lockTimeout: '-1'))
-        ->toThrow(\InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
+    expect(fn (): IdempotencyOptions => IdempotencyOptions::resolve(lockTimeout: '-1'))
+        ->toThrow(InvalidArgumentException::class, 'The lock_timeout must be a positive integer (>= 1).');
 });
