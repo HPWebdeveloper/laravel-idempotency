@@ -33,17 +33,17 @@ final readonly class Idempotent
 
     public static function using(
         ?int $ttl = null,
-        ?int $lockTimeout = null,
         ?bool $required = null,
         ?IdempotencyScope $scope = null,
         ?string $header = null,
+        ?int $lockTimeout = null,
     ): string {
         return self::class . ':' . IdempotencyOptions::resolve(
             ttl: $ttl,
-            lockTimeout: $lockTimeout,
             required: $required,
             scope: $scope,
             header: $header,
+            lockTimeout: $lockTimeout,
         )->serialize();
     }
 
@@ -51,16 +51,22 @@ final readonly class Idempotent
         Request $request,
         Closure $next,
         null|int|string $ttl = null,
-        null|int|string $lockTimeout = null,
         null|bool|string $required = null,
         null|string|IdempotencyScope $scope = null,
         ?string $header = null,
+        null|int|string $lockTimeout = null,
     ): SymfonyResponse {
         if (! $this->isIdempotentMethod($request)) {
             return $next($request);
         }
 
-        $options = IdempotencyOptions::resolve($ttl, $lockTimeout, $required, $scope, $header);
+        $options = IdempotencyOptions::resolve(
+            ttl: $ttl,
+            required: $required,
+            scope: $scope,
+            header: $header,
+            lockTimeout: $lockTimeout,
+        );
         $clientKey = $request->header($options->header);
 
         if (! is_string($clientKey) || $clientKey === '') {

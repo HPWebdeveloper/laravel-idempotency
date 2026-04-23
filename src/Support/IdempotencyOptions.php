@@ -10,25 +10,25 @@ final readonly class IdempotencyOptions
 {
     public function __construct(
         public int $ttl,
-        public int $lockTimeout,
         public bool $required,
         public IdempotencyScope $scope,
         public string $header,
+        public int $lockTimeout,
     ) {}
 
     public static function resolve(
         null|int|string $ttl = null,
-        null|int|string $lockTimeout = null,
         null|bool|string $required = null,
         null|string|IdempotencyScope $scope = null,
         ?string $header = null,
+        null|int|string $lockTimeout = null,
     ): self {
         return new self(
             ttl: self::resolveTtl($ttl),
-            lockTimeout: self::resolveLockTimeout($lockTimeout),
             required: self::resolveRequired($required),
             scope: IdempotencyScope::fromConfig($scope),
             header: $header ?? config()->string('idempotency.header'),
+            lockTimeout: self::resolveLockTimeout($lockTimeout),
         );
     }
 
@@ -36,10 +36,10 @@ final readonly class IdempotencyOptions
     {
         return implode(',', [
             $this->ttl,
-            $this->lockTimeout,
             $this->required ? '1' : '0',
             $this->scope->value,
             $this->header,
+            $this->lockTimeout,
         ]);
     }
 

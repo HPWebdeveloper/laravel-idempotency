@@ -290,13 +290,13 @@ test('lock is released after downstream exceptions', function (): void {
 
 test('using generates the correct middleware string', function (): void {
     expect(Idempotent::using())
-        ->toBe(Idempotent::class . ':3600,10,1,user,Idempotency-Key')
+        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key,10')
         ->and(Idempotent::using(ttl: 600))
-        ->toBe(Idempotent::class . ':600,10,1,user,Idempotency-Key')
+        ->toBe(Idempotent::class . ':600,1,user,Idempotency-Key,10')
         ->and(Idempotent::using(lockTimeout: 45))
-        ->toBe(Idempotent::class . ':3600,45,1,user,Idempotency-Key')
+        ->toBe(Idempotent::class . ':3600,1,user,Idempotency-Key,45')
         ->and(Idempotent::using(required: false, scope: IdempotencyScope::Ip, header: 'X-Idempotency-Key'))
-        ->toBe(Idempotent::class . ':3600,10,0,ip,X-Idempotency-Key');
+        ->toBe(Idempotent::class . ':3600,0,ip,X-Idempotency-Key,10');
 });
 
 test('omitted middleware options pull defaults from config', function (): void {
