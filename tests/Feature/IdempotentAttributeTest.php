@@ -78,6 +78,17 @@ test('attribute omissions pull defaults from config', function (): void {
     ]);
 });
 
+test('attribute accepts the legacy positional argument order', function (): void {
+    // Regression: #[Idempotent(600, false, IdempotencyScope::Ip, 'X-Idempotency-Key')]
+    // must keep binding positionally to (ttl, required, scope, header) after lockTimeout was added.
+    // lockTimeout is omitted, so it falls back to the config default (10).
+    $route = Route::post('/positional-orders', [IdempotentAttributePositionalTestController::class, 'store']);
+
+    expect($route->controllerMiddleware())->toBe([
+        IdempotentMiddleware::class . ':600,0,ip,X-Idempotency-Key,10',
+    ]);
+});
+
 class IdempotentAttributeTestController
 {
     #[Idempotent]
@@ -121,4 +132,10 @@ class IdempotentAttributeExceptTestController
     public function store(): void {}
 
     public function update(): void {}
+}
+
+#[Idempotent(600, false, IdempotencyScope::Ip, 'X-Idempotency-Key')]
+class IdempotentAttributePositionalTestController
+{
+    public function store(): void {}
 }
